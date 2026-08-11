@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Ayarlar — Murmur</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+      background: #1c1c1e;
+      color: #f5f5f7;
+      font-size: 14px;
+      padding-top: 44px; /* titlebar */
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding: 0 24px;
+    }
+
+    .tab {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.45);
+      font-size: 13px;
+      padding: 10px 16px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+
+    .tab.active {
+      color: #fff;
+      border-bottom-color: #FF375F;
+    }
+
+    .tab-content { display: none; padding: 24px; }
+    .tab-content.active { display: block; }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.35);
+      margin-bottom: 12px;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 10px;
+      margin-bottom: 8px;
+    }
+
+    .setting-label { font-size: 14px; }
+    .setting-desc  { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+
+    select {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .hotkey-display {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      letter-spacing: 0.05em;
+    }
+
+    .cmd-table { width: 100%; border-collapse: collapse; }
+    .cmd-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+    }
+    .cmd-table td:first-child {
+      color: rgba(255,255,255,0.6);
+      font-family: monospace;
+    }
+    .cmd-table td:last-child { color: #fff; }
+
+    .section-header {
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.4);
+      padding: 10px 12px 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sekmeler -->
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('general')">Genel</button>
+    <button class="tab" onclick="showTab('speech')">Ses Tanıma</button>
+    <button class="tab" onclick="showTab('commands')">Komutlar</button>
+  </div>
+
+  <!-- Genel -->
+  <div class="tab-content active" id="tab-general">
+    <p class="section-title">Kısayol</p>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Dikte kısayolu</div>
+        <div class="setting-desc">Herhangi bir uygulamada çalışır</div>
+      </div>
+      <span class="hotkey-display">⌥ Space</span>
+    </div>
+
+    <p class="section-title" style="margin-top:20px">Hakkında</p>
+    <div class="setting-row">
+      <div class="setting-label">Murmur</div>
+      <span style="color:rgba(255,255,255,0.4); font-size:13px">v1.0.0</span>
+    </div>
+  </div>
+
+  <!-- Ses Tanıma -->
+  <div class="tab-content" id="tab-speech">
+    <p class="section-title">Dil</p>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Dikte dili</div>
+        <div class="setting-desc">Otomatik: sistem diline göre seçilir</div>
+      </div>
+      <select id="langSelect" onchange="saveLang()">
+        <option value="auto">🔄 Otomatik</option>
+        <option value="tr">🇹🇷 Türkçe</option>
+        <option value="en">🇬🇧 İngilizce</option>
+      </select>
+    </div>
+
+    <div style="margin-top:16px; padding:12px; background:rgba(255,149,0,0.1); border-radius:10px; border:1px solid rgba(255,149,0,0.2)">
+      <p style="font-size:12px; color:rgba(255,200,100,0.9); line-height:1.5">
+        💡 <strong>İzin gerekiyor:</strong> İlk kullanımda macOS mikrofon ve konuşma tanıma izni isteyecek. Her ikisini de "İzin Ver" ile onayla.
+      </p>
+    </div>
+  </div>
+
+  <!-- Komutlar -->
+  <div class="tab-content" id="tab-commands">
+    <div style="overflow-y:auto; max-height:260px">
+      <p class="section-header">🇹🇷 Türkçe</p>
+      <table class="cmd-table">
+        <tr><td>"nokta"</td><td>.</td></tr>
+        <tr><td>"virgül"</td><td>,</td></tr>
+        <tr><td>"soru işareti"</td><td>?</td></tr>
+        <tr><td>"ünlem"</td><td>!</td></tr>
+        <tr><td>"iki nokta"</td><td>:</td></tr>
+        <tr><td>"yeni satır"</td><td>↵</td></tr>
+        <tr><td>"yeni paragraf"</td><td>↵↵</td></tr>
+        <tr><td>"başlık yaz X"</td><td># X</td></tr>
+        <tr><td>"büyük harf X"</td><td>X (büyük)</td></tr>
+      </table>
+
+      <p class="section-header" style="margin-top:12px">🇬🇧 English</p>
+      <table class="cmd-table">
+        <tr><td>"period"</td><td>.</td></tr>
+        <tr><td>"comma"</td><td>,</td></tr>
+        <tr><td>"question mark"</td><td>?</td></tr>
+        <tr><td>"exclamation"</td><td>!</td></tr>
+        <tr><td>"new line"</td><td>↵</td></tr>
+        <tr><td>"new paragraph"</td><td>↵↵</td></tr>
+        <tr><td>"heading X"</td><td># X</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron')
+
+    // Ayarları yükle
+    ipcRenderer.invoke('get-settings').then(s => {
+      document.getElementById('langSelect').value = s.language || 'auto'
+    })
+
+    function showTab(name) {
+      document.querySelectorAll('.tab').forEach((t, i) => {
+        t.classList.toggle('active', ['general','speech','commands'][i] === name)
+      })
+      document.querySelectorAll('.tab-content').forEach(c => {
+        c.classList.toggle('active', c.id === `tab-${name}`)
+      })
+    }
+
+    function saveLang() {
+      const val = document.getElementById('langSelect').value
+      ipcRenderer.send('save-setting', 'language', val)
+    }
+  </script>
+</body>
+</html>

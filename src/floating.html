@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+      -webkit-app-region: drag;
+      overflow: hidden;
+    }
+
+    .panel {
+      margin: 8px;
+      background: rgba(30, 30, 35, 0.95);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 18px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      padding: 0 18px;
+      gap: 14px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .mic-icon {
+      font-size: 20px;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.6; transform: scale(0.9); }
+    }
+
+    /* Ses dalgası */
+    .wave {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      flex: 1;
+    }
+
+    .bar {
+      width: 3px;
+      border-radius: 2px;
+      background: linear-gradient(to top, #FF375F, #FF6B9D);
+      animation: wave 0.8s ease-in-out infinite alternate;
+    }
+
+    .bar:nth-child(1)  { height: 8px;  animation-delay: 0s; }
+    .bar:nth-child(2)  { height: 18px; animation-delay: 0.1s; }
+    .bar:nth-child(3)  { height: 28px; animation-delay: 0.05s; }
+    .bar:nth-child(4)  { height: 14px; animation-delay: 0.15s; }
+    .bar:nth-child(5)  { height: 24px; animation-delay: 0.08s; }
+    .bar:nth-child(6)  { height: 10px; animation-delay: 0.12s; }
+    .bar:nth-child(7)  { height: 22px; animation-delay: 0.03s; }
+    .bar:nth-child(8)  { height: 16px; animation-delay: 0.18s; }
+    .bar:nth-child(9)  { height: 28px; animation-delay: 0.07s; }
+    .bar:nth-child(10) { height: 12px; animation-delay: 0.14s; }
+    .bar:nth-child(11) { height: 20px; animation-delay: 0.09s; }
+    .bar:nth-child(12) { height: 8px;  animation-delay: 0.16s; }
+
+    @keyframes wave {
+      from { transform: scaleY(0.3); opacity: 0.5; }
+      to   { transform: scaleY(1);   opacity: 1;   }
+    }
+
+    /* Anlık transkript */
+    .live-text {
+      color: rgba(255,255,255,0.75);
+      font-size: 13px;
+      max-width: 90px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Dil etiketi */
+    .lang-badge { font-size: 15px; }
+
+    /* İptal butonu */
+    .cancel-btn {
+      -webkit-app-region: no-drag;
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.4);
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 50%;
+      transition: color 0.15s;
+      line-height: 1;
+    }
+
+    .cancel-btn:hover { color: rgba(255,255,255,0.8); }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #30D158;
+      animation: blink 1s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <span class="mic-icon">🎙</span>
+    <div class="status-dot"></div>
+
+    <div class="wave">
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+    </div>
+
+    <span class="live-text" id="liveText">Dinliyorum...</span>
+    <span class="lang-badge" id="langBadge">🇹🇷</span>
+    <button class="cancel-btn" id="cancelBtn" title="İptal">✕</button>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron')
+
+    const liveText  = document.getElementById('liveText')
+    const langBadge = document.getElementById('langBadge')
+    const cancelBtn = document.getElementById('cancelBtn')
+
+    let recognition = null
+    let finalResult = ''
+
+    const langMap = { auto: 'tr-TR', tr: 'tr-TR', en: 'en-US' }
+
+    // Önce mikrofon iznini iste, sonra tanımayı başlat
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        // İzin verildi — stream'i kapat, sadece izni aldık
+        stream.getTracks().forEach(t => t.stop())
+        startRecognition()
+      })
+      .catch(err => {
+        liveText.textContent = 'Mikrofon izni gerekli!'
+        console.error('Mikrofon izni reddedildi:', err)
+        setTimeout(() => ipcRenderer.send('dictation-cancel'), 2000)
+      })
+
+    function startRecognition() {
+      ipcRenderer.invoke('get-settings').then(s => {
+        const lang = langMap[s.language] || 'tr-TR'
+        langBadge.textContent = lang.startsWith('tr') ? '🇹🇷' : '🇬🇧'
+
+        recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)()
+        recognition.lang             = lang
+        recognition.continuous       = false
+        recognition.interimResults   = true
+        recognition.maxAlternatives  = 1
+
+        recognition.onstart = () => {
+          liveText.textContent = 'Dinliyorum...'
+        }
+
+        recognition.onresult = (e) => {
+          let interim = ''
+          finalResult = ''
+
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const t = e.results[i][0].transcript
+            if (e.results[i].isFinal) finalResult += t
+            else interim += t
+          }
+
+          liveText.textContent = interim || finalResult || 'Dinliyorum...'
+
+          if (finalResult) {
+            const processed = processCommands(finalResult.trim(), lang)
+            ipcRenderer.send('dictation-result', processed)
+          }
+        }
+
+        recognition.onerror = (e) => {
+          console.error('Hata:', e.error)
+          if (e.error === 'not-allowed') {
+            liveText.textContent = 'İzin reddedildi!'
+          } else if (e.error === 'no-speech') {
+            liveText.textContent = 'Ses algılanmadı'
+          } else if (e.error !== 'aborted') {
+            liveText.textContent = `Hata: ${e.error}`
+          }
+          if (e.error !== 'aborted') {
+            setTimeout(() => ipcRenderer.send('dictation-cancel'), 1500)
+          }
+        }
+
+        recognition.onend = () => {
+          if (!finalResult) {
+            setTimeout(() => ipcRenderer.send('dictation-cancel'), 500)
+          }
+        }
+
+        recognition.start()
+      })
+    }
+
+    // ─── Komutlar ────────────────────────────────────────────────────────────
+
+    const TR_COMMANDS = {
+      'nokta': '.', 'virgül': ',', 'soru işareti': '?',
+      'ünlem': '!', 'iki nokta': ':', 'noktalı virgül': ';',
+      'yeni satır': '\n', 'yeni paragraf': '\n\n', 'tire': '-',
+    }
+
+    const EN_COMMANDS = {
+      'period': '.', 'comma': ',', 'question mark': '?',
+      'exclamation': '!', 'colon': ':', 'semicolon': ';',
+      'new line': '\n', 'new paragraph': '\n\n', 'dash': '-',
+    }
+
+    function processCommands(text, lang) {
+
+    // ─── İptal ───────────────────────────────────────────────────────────────
+
+    cancelBtn.addEventListener('click', () => {
+      recognition.abort()
+      ipcRenderer.send('dictation-cancel')
+    })
+  </script>
+</body>
+</html>

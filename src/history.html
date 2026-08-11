@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Geçmiş — Murmur</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+      background: #1c1c1e;
+      color: #f5f5f7;
+      font-size: 14px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding-top: 44px;
+    }
+
+    /* Arama */
+    .search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .search-bar input {
+      flex: 1;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      padding: 7px 12px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .search-bar input::placeholder { color: rgba(255,255,255,0.3); }
+
+    /* Liste */
+    #list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      margin-bottom: 6px;
+      background: rgba(255,255,255,0.05);
+      transition: background 0.1s;
+    }
+
+    .entry:hover { background: rgba(255,255,255,0.09); }
+
+    .entry-flag { font-size: 18px; flex-shrink: 0; }
+
+    .entry-body { flex: 1; min-width: 0; }
+
+    .entry-text {
+      font-size: 14px;
+      line-height: 1.4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .entry-date {
+      font-size: 11px;
+      color: rgba(255,255,255,0.3);
+      margin-top: 3px;
+    }
+
+    .entry-actions {
+      display: flex;
+      gap: 6px;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    .entry:hover .entry-actions { opacity: 1; }
+
+    .action-btn {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.4);
+      font-size: 15px;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: all 0.1s;
+    }
+
+    .action-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
+    .action-btn.delete:hover { color: #FF453A; }
+
+    /* Boş durum */
+    .empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 12px;
+      color: rgba(255,255,255,0.25);
+    }
+
+    .empty-icon { font-size: 40px; }
+    .empty-text { font-size: 14px; }
+
+    /* Alt bar */
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .footer-count { font-size: 12px; color: rgba(255,255,255,0.3); }
+
+    .clear-btn {
+      background: none;
+      border: 1px solid rgba(255,69,58,0.4);
+      color: #FF453A;
+      padding: 5px 12px;
+      border-radius: 7px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .clear-btn:hover { background: rgba(255,69,58,0.15); }
+    .clear-btn:disabled { opacity: 0.3; cursor: default; }
+  </style>
+</head>
+<body>
+
+  <div class="search-bar">
+    <span>🔍</span>
+    <input type="text" id="search" placeholder="Geçmişte ara..." oninput="filterList()">
+  </div>
+
+  <div id="list"></div>
+
+  <div class="footer">
+    <span class="footer-count" id="count">0 kayıt</span>
+    <button class="clear-btn" id="clearBtn" onclick="clearAll()">Tümünü Sil</button>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron')
+
+    let allEntries = []
+
+    // Geçmişi yükle
+    async function loadHistory() {
+      allEntries = await ipcRenderer.invoke('get-history')
+      renderList(allEntries)
+    }
+
+    function renderList(entries) {
+      const list = document.getElementById('list')
+      document.getElementById('count').textContent = `${allEntries.length} kayıt`
+      document.getElementById('clearBtn').disabled = allEntries.length === 0
+
+      if (entries.length === 0) {
+        list.innerHTML = `
+          <div class="empty">
+            <span class="empty-icon">🕐</span>
+            <span class="empty-text">${document.getElementById('search').value ? 'Sonuç bulunamadı' : 'Henüz kayıt yok'}</span>
+          </div>`
+        return
+      }
+
+      list.innerHTML = entries.map(e => `
+        <div class="entry" data-id="${e.id}">
+          <span class="entry-flag">${getFlag(e)}</span>
+          <div class="entry-body">
+            <div class="entry-text" title="${e.text}">${e.text}</div>
+            <div class="entry-date">${formatDate(e.date)}</div>
+          </div>
+          <div class="entry-actions">
+            <button class="action-btn" onclick="copyEntry('${e.id}')" title="Kopyala">📋</button>
+            <button class="action-btn delete" onclick="deleteEntry('${e.id}')" title="Sil">🗑</button>
+          </div>
+        </div>
+      `).join('')
+    }
+
+    function filterList() {
+      const q = document.getElementById('search').value.toLowerCase()
+      const filtered = q ? allEntries.filter(e => e.text.toLowerCase().includes(q)) : allEntries
+      renderList(filtered)
+    }
+
+    function copyEntry(id) {
+      const entry = allEntries.find(e => String(e.id) === id)
+      if (entry) {
+        navigator.clipboard.writeText(entry.text)
+        // Kısa onay animasyonu
+        const btn = document.querySelector(`[data-id="${id}"] .action-btn`)
+        if (btn) { btn.textContent = '✅'; setTimeout(() => btn.textContent = '📋', 1500) }
+      }
+    }
+
+    function deleteEntry(id) {
+      ipcRenderer.send('delete-history-item', Number(id))
+      allEntries = allEntries.filter(e => String(e.id) !== id)
+      filterList()
+    }
+
+    function clearAll() {
+      if (!confirm('Tüm geçmiş silinecek. Emin misin?')) return
+      ipcRenderer.send('clear-history')
+      allEntries = []
+      renderList([])
+    }
+
+    function getFlag(entry) {
+      // Dil tespiti — Türkçe karakterlere bak
+      const hasTurkish = /[çğıöşüÇĞİÖŞÜ]/.test(entry.text)
+      return hasTurkish ? '🇹🇷' : '🇬🇧'
+    }
+
+    function formatDate(iso) {
+      const d = new Date(iso)
+      const now = new Date()
+      const diff = Math.floor((now - d) / 1000)
+      if (diff < 60)   return 'Az önce'
+      if (diff < 3600) return `${Math.floor(diff/60)} dk önce`
+      if (diff < 86400) return `${Math.floor(diff/3600)} sa önce`
+      return d.toLocaleDateString('tr-TR')
+    }
+
+    loadHistory()
+  </script>
+</body>
+</html>

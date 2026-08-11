@@ -1,0 +1,27 @@
+{
+  "name": "murmur",
+  "version": "1.0.0",
+  "description": "System-wide voice dictation for macOS — Turkish & English",
+  "main": "src/main.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^36.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.murmur.app",
+    "productName": "Murmur",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dmg"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  }
+}
