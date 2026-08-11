@@ -295,6 +295,37 @@
       </div>
     </div>
 
+    <p class="group-title">Groq API (Önerilen)</p>
+    <div class="group">
+      <div class="row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+        <div class="row-info">
+          <div class="row-label">Groq API Anahtarı</div>
+          <div class="row-desc">Ücretsiz → <a id="groqLink" href="#" style="color:#FF375F">console.groq.com</a> adresinden al</div>
+        </div>
+        <input type="password" id="groqKey" placeholder="gsk_..." style="
+          width:100%; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
+          color:#fff; padding:8px 12px; border-radius:8px; font-size:13px; outline:none;
+          font-family: monospace;
+        ">
+        <div style="display:flex; gap:8px;">
+          <button id="saveGroqBtn" style="
+            background:#FF375F; border:none; color:#fff; padding:6px 16px;
+            border-radius:7px; font-size:12px; cursor:pointer; font-weight:600;
+          ">Kaydet</button>
+          <span id="groqStatus" style="font-size:12px; color:rgba(255,255,255,0.4); line-height:2.2;"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="group" style="background:rgba(255,149,0,0.06); border:1px solid rgba(255,149,0,0.15);">
+      <div class="row">
+        <div class="row-info">
+          <div class="row-label" style="color:#FF9F0A;">✨ Groq neden iyi?</div>
+          <div class="row-desc">whisper-large-v3-turbo modeli • Ücretsiz • İnternette çalışır • Türkçe'de çok daha doğru • Halüsinasyon yok</div>
+        </div>
+      </div>
+    </div>
+
     <p class="group-title">Model Kalitesi</p>
     <div class="group">
       <div class="row">
@@ -401,21 +432,42 @@
     ipcRenderer.invoke('get-settings').then(s => {
       document.getElementById('langSelect').value  = s.language || 'auto'
       document.getElementById('modelSelect').value = s.model    || 'base'
+      if (s.groqApiKey) {
+        document.getElementById('groqKey').value = s.groqApiKey
+        document.getElementById('groqStatus').textContent = '✅ Kayıtlı'
+        document.getElementById('groqStatus').style.color = '#30D158'
+      }
     })
 
-    // Kaydet
+    // Dil/model kaydet
     document.getElementById('langSelect').addEventListener('change', e => {
       ipcRenderer.send('save-setting', 'language', e.target.value)
     })
-
     document.getElementById('modelSelect').addEventListener('change', e => {
       ipcRenderer.send('save-setting', 'model', e.target.value)
     })
 
-    // GitHub linki
+    // Groq API key kaydet
+    document.getElementById('saveGroqBtn').addEventListener('click', () => {
+      const key = document.getElementById('groqKey').value.trim()
+      if (!key.startsWith('gsk_') && key !== '') {
+        document.getElementById('groqStatus').textContent = '⚠️ gsk_ ile başlamalı'
+        document.getElementById('groqStatus').style.color = '#FF9F0A'
+        return
+      }
+      ipcRenderer.send('save-setting', 'groqApiKey', key)
+      document.getElementById('groqStatus').textContent = key ? '✅ Kaydedildi!' : '🗑 Silindi'
+      document.getElementById('groqStatus').style.color = key ? '#30D158' : 'rgba(255,255,255,0.4)'
+    })
+
+    // GitHub ve Groq linkleri
     document.getElementById('ghLink').addEventListener('click', e => {
       e.preventDefault()
       shell.openExternal('https://github.com/S1E0sk/murmur')
+    })
+    document.getElementById('groqLink').addEventListener('click', e => {
+      e.preventDefault()
+      shell.openExternal('https://console.groq.com/keys')
     })
   </script>
 </body>

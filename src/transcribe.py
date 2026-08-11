@@ -1,71 +1,14 @@
 #!/usr/bin/env python3
 """
-Murmur — Gerçek zamanlı Whisper transkripsiyon
-Anti-halüsinasyon filtreleri ile güçlendirilmiş.
+Murmur — Groq Whisper API ile ses tanıma
+whisper-large-v3-turbo modeli — Türkçe'de mükemmel doğruluk
 """
 
-import sys, os, signal, subprocess, tempfile, warnings
-warnings.filterwarnings("ignore")
+import sys, os, signal, subprocess, tempfile, threading
 
-LANG  = sys.argv[1] if len(sys.argv) > 1 else "tr"
-MODEL = sys.argv[2] if len(sys.argv) > 2 else "base"
+LANG    = sys.argv[1] if len(sys.argv) > 1 else "tr"
+API_KEY = sys.argv[2] if len(sys.argv) > 2 else ""
 
-# ─── Whisper modelini yükle ───────────────────────────────────────────────────
-import whisper
-_model = None
-
-def get_model():
-    global _model
-    if _model is None:
-        _model = whisper.load_model(MODEL)
-    return _model
-
-# ─── Bilinen halüsinasyonlar — Türkçe ────────────────────────────────────────
-# Whisper sessizlikte veya gürültüde bunları üretiyor
-TR_HALLUCINATIONS = {
-    "bu dizinin betimlemesi trt tarafından sesli betimleme derneği'ne yaptırılmıştır",
-    "bu dizi trt tarafından sesli betimleme",
-    "altyazı m.k.",
-    "altyazı",
-    "çeviri",
-    "çeviri ve seslendirme",
-    "teşekkürler",
-    "teşekkür ederim",
-    "iyi seyirler",
-    "bizi izlediğiniz için teşekkürler",
-    "abone olmayı unutmayın",
-    "beğenmeyi unutmayın",
-    "görüşmek üzere",
-    "subtitle",
-    "subtitles",
-    "thank you for watching",
-    "thanks for watching",
-    "please subscribe",
-}
-
-EN_HALLUCINATIONS = {
-    "thank you for watching", "thanks for watching",
-    "please subscribe", "like and subscribe",
-    "don't forget to subscribe",
-}
-
-def is_hallucination(text):
-    """Bilinen halüsinasyon mu?"""
-    lower = text.lower().strip(".,!? \n")
-    hallucinations = TR_HALLUCINATIONS if LANG == "tr" else EN_HALLUCINATIONS
-    for h in hallucinations:
-        if h in lower or lower in h:
-            return True
-    # Çok kısa veya tekrar eden karakterler
-    if len(lower) < 3:
-        return True
-    # Sadece noktalama
-    if all(c in '.,!?-_:;"\' ' for c in lower):
-        return True
-    return False
-
-# ─── Sinyal işleme ───────────────────────────────────────────────────────────
-import threading
 stop_event = threading.Event()
 
 def cleanup(sig=None, frame=None):
@@ -75,15 +18,21 @@ def cleanup(sig=None, frame=None):
 signal.signal(signal.SIGTERM, cleanup)
 signal.signal(signal.SIGINT, cleanup)
 
+# ─── Groq istemcisi ───────────────────────────────────────────────────────────
+try:
+    from groq import Groq
+    client = Groq(api_key=API_KEY)
+    USE_GROQ = True
+except Exception:
+    USE_GROQ = False
+
 # ─── Ses kaydı ───────────────────────────────────────────────────────────────
-def record_chunk(duration=3.5):
-    """Sabit süreli parça kaydet"""
+def record_chunk(duration=4.0):
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     tmp.close()
     path = tmp.name
-
-    cmd = ["sox", "-d", "-r", "16000", "-c", "1", "-b", "16", path,
-           "trim", "0", str(duration)]
+    cmd = ["sox", "-d", "-r", "16000", "-c", "1", "-b", "16",
+           path, "trim", "0", str(duration)]
     try:
         proc = subprocess.Popen(cmd, stderr=subprocess.DEVNULL)
         proc.wait(timeout=duration + 2)
@@ -92,68 +41,75 @@ def record_chunk(duration=3.5):
     return path
 
 def audio_has_speech(path):
-    """Dosyada gerçek ses var mı? sox ile RMS enerji kontrolü."""
+    """RMS enerji kontrolü — sessiz parçaları filtrele"""
     try:
-        if os.path.getsize(path) < 5000:   # çok küçük = sessizlik
+        if os.path.getsize(path) < 6000:
             return False
-        # sox ile ortalama güç seviyesini ölç
         result = subprocess.run(
             ["sox", path, "-n", "stat"],
             capture_output=True, text=True
         )
-        output = result.stderr
-        for line in output.split("\n"):
+        for line in result.stderr.split("\n"):
             if "RMS amplitude" in line:
-                val = float(line.split()[-1])
-                return val > 0.002   # eşik altı = sessizlik
+                return float(line.split()[-1]) > 0.003
         return True
     except:
-        size = os.path.getsize(path) if os.path.exists(path) else 0
-        return size > 6000
+        return os.path.getsize(path) > 8000 if os.path.exists(path) else False
 
-# ─── Transkripsiyon ───────────────────────────────────────────────────────────
-def transcribe_chunk(path):
-    """Tek parçayı yazıya çevir — halüsinasyon filtreli."""
+# ─── Groq API ile transkripsiyon ──────────────────────────────────────────────
+def transcribe_groq(path):
     try:
-        model = get_model()
-
-        # Türkçe doğruluğunu artıran prompt
-        initial_prompt = (
-            "Kullanıcının konuşması, doğal Türkçe cümleler." if LANG == "tr"
-            else "Natural English speech."
-        )
-
-        result = model.transcribe(
-            path,
-            language=LANG,
-            fp16=False,
-            task="transcribe",
-            temperature=0.0,            # deterministik
-            condition_on_previous_text=False,
-            no_speech_threshold=0.6,    # sessizliği daha agresif filtrele
-            logprob_threshold=-1.2,     # düşük güvenli sonuçları at
-            compression_ratio_threshold=2.2,
-            initial_prompt=initial_prompt,
-        )
-
-        text = result["text"].strip()
-
-        # Halüsinasyon kontrolü
-        if not text or is_hallucination(text):
-            return ""
-
-        # Güven skoru kontrolü — çok düşükse at
-        if "segments" in result:
-            segs = result["segments"]
-            if segs:
-                avg_logprob = sum(s.get("avg_logprob", 0) for s in segs) / len(segs)
-                no_speech   = max(s.get("no_speech_prob", 0) for s in segs)
-                if avg_logprob < -1.0 or no_speech > 0.7:
-                    return ""
-
-        return text
-
+        with open(path, "rb") as f:
+            result = client.audio.transcriptions.create(
+                file=("audio.wav", f, "audio/wav"),
+                model="whisper-large-v3-turbo",
+                language=LANG,
+                response_format="text",
+                prompt=(
+                    "Doğal Türkçe konuşma." if LANG == "tr"
+                    else "Natural English speech."
+                )
+            )
+        text = str(result).strip()
+        return text if len(text) > 1 else ""
     except Exception as e:
+        err = str(e)
+        if "api_key" in err.lower() or "authentication" in err.lower():
+            print("ERROR:Geçersiz API anahtarı", flush=True)
+        elif "connection" in err.lower() or "network" in err.lower():
+            print("ERROR:İnternet bağlantısı yok", flush=True)
+        else:
+            print(f"ERROR:{err[:60]}", flush=True)
+        return ""
+    finally:
+        try: os.unlink(path)
+        except: pass
+
+# ─── Lokal Whisper (yedek) ────────────────────────────────────────────────────
+_model = None
+
+def transcribe_local(path):
+    global _model
+    try:
+        import warnings, whisper
+        warnings.filterwarnings("ignore")
+        if _model is None:
+            _model = whisper.load_model("base")
+        result = _model.transcribe(
+            path, language=LANG, fp16=False,
+            temperature=0, no_speech_threshold=0.6,
+            condition_on_previous_text=False,
+            compression_ratio_threshold=1.8,
+        )
+        text = result["text"].strip()
+        # Tekrarlayan kelime tespiti — halüsinasyon
+        words = text.split()
+        if len(words) > 4:
+            unique = len(set(words))
+            if unique / len(words) < 0.35:   # %35'ten az benzersiz = loop
+                return ""
+        return text if len(text) > 2 else ""
+    except Exception:
         return ""
     finally:
         try: os.unlink(path)
@@ -161,30 +117,31 @@ def transcribe_chunk(path):
 
 # ─── Ana döngü ────────────────────────────────────────────────────────────────
 def main():
-    print("INTERIM:Dinliyorum...", flush=True)
-
-    try:
-        get_model()
-    except Exception as e:
-        print(f"ERROR:Model yüklenemedi", flush=True)
+    if not API_KEY and USE_GROQ:
+        print("ERROR:API_KEY_MISSING", flush=True)
         sys.exit(1)
 
+    print("INTERIM:Dinliyorum...", flush=True)
+
     while not stop_event.is_set():
-        path = record_chunk(3.5)
+        path = record_chunk(4.0)
 
         if stop_event.is_set():
             try: os.unlink(path)
             except: pass
             break
 
-        # Önce ses seviyesi kontrolü — boş parçaları Whisper'a gönderme
         if not audio_has_speech(path):
             try: os.unlink(path)
             except: pass
             continue
 
         print("INTERIM:İşleniyor...", flush=True)
-        text = transcribe_chunk(path)
+
+        if USE_GROQ and API_KEY:
+            text = transcribe_groq(path)
+        else:
+            text = transcribe_local(path)
 
         if text:
             print(f"CHUNK:{text}", flush=True)

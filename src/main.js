@@ -27,11 +27,12 @@ app.on('window-all-closed', (e) => e.preventDefault())
 // ─── Tray ────────────────────────────────────────────────────────────────────
 
 function createTray() {
-  const iconPath = path.join(__dirname, 'assets', 'tray.png')
-  const icon = nativeImage.createFromPath(iconPath)
-  icon.setTemplateImage(true)
+  // 1x1 şeffaf PNG — macOS Tray bir görüntü ister
+  const BLANK = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+  const icon = nativeImage.createFromDataURL(BLANK)
   tray = new Tray(icon)
-  tray.setToolTip('Murmur — Sesli Dikte')
+  tray.setTitle('🎙')          // her macOS sürümünde çalışır
+  tray.setToolTip('Murmur — Sesli Dikte  |  ⌥Space')
   buildTrayMenu()
   tray.on('click', () => tray.popUpContextMenu())
 }
@@ -94,15 +95,13 @@ function startDictation() {
   createFloatingWindow()
   buildTrayMenu(true)
 
-  // Dinleme ikonu — kırmızı
-  const activeIcon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'))
-  tray.setImage(activeIcon)
-  tray.setTitle('●')  // menü barında kırmızı nokta
+  // Dinleme durumu — kırmızı nokta göster
+  tray.setTitle('🔴')
 
-  // Python + Whisper ile yerel ses tanıma
+  // Python + Groq/Whisper ses tanıma
   const pyScript = path.join(__dirname, 'transcribe.py')
-  const model = s.model || 'base'
-  speechProcess = spawn('python3', [pyScript, langCode, model])
+  const apiKey   = s.groqApiKey || ''
+  speechProcess  = spawn('python3', [pyScript, langCode, apiKey])
 
   speechProcess.stdout.on('data', (data) => {
     const lines = data.toString().trim().split('\n')
@@ -165,10 +164,10 @@ function stopDictation() {
     }, 100)
   }
   buildTrayMenu(false)
-  const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'))
-  icon.setTemplateImage(true)
+  const BLANK = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+  const icon = nativeImage.createFromDataURL(BLANK)
   tray.setImage(icon)
-  tray.setTitle('')
+  tray.setTitle('🎙')
 }
 
 // Komutları main process'te de işle (Swift output için)
