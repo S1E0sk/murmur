@@ -2,207 +2,421 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Ayarlar — Murmur</title>
+  <title>Murmur — Ayarlar</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
       background: #1c1c1e;
-      color: #f5f5f7;
-      font-size: 14px;
-      padding-top: 44px; /* titlebar */
+      color: #f2f2f7;
+      font-size: 13px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
+    /* Başlık çubuğu */
+    .titlebar {
+      height: 52px;
+      -webkit-app-region: drag;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      flex-shrink: 0;
+    }
+
+    .titlebar h1 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: -0.3px;
+    }
+
+    .titlebar .version {
+      margin-left: auto;
+      font-size: 11px;
+      color: rgba(255,255,255,0.25);
+    }
+
+    /* Sekmeler */
     .tabs {
       display: flex;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      padding: 0 24px;
+      padding: 0 16px;
+      gap: 4px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      flex-shrink: 0;
     }
 
     .tab {
       background: none;
       border: none;
-      color: rgba(255,255,255,0.45);
+      color: rgba(255,255,255,0.4);
       font-size: 13px;
-      padding: 10px 16px;
+      padding: 10px 14px;
       cursor: pointer;
       border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
       transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .tab.active {
-      color: #fff;
-      border-bottom-color: #FF375F;
+    .tab:hover { color: rgba(255,255,255,0.7); }
+    .tab.active { color: #fff; border-bottom-color: #FF375F; }
+
+    /* İçerik */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
     }
 
-    .tab-content { display: none; padding: 24px; }
-    .tab-content.active { display: block; }
+    /* Ayar grubu */
+    .group {
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
 
-    .section-title {
+    .group-title {
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.07em;
       color: rgba(255,255,255,0.35);
-      margin-bottom: 12px;
-    }
-
-    .setting-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 16px;
-      background: rgba(255,255,255,0.06);
-      border-radius: 10px;
+      padding: 0 16px;
       margin-bottom: 8px;
     }
 
-    .setting-label { font-size: 14px; }
-    .setting-desc  { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px; }
-
-    select {
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.15);
-      color: #fff;
-      padding: 6px 10px;
-      border-radius: 8px;
-      font-size: 13px;
-      cursor: pointer;
-      outline: none;
+    .row {
+      display: flex;
+      align-items: center;
+      padding: 13px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
     }
 
-    .hotkey-display {
+    .row:last-child { border-bottom: none; }
+
+    .row-info { flex: 1; min-width: 0; }
+    .row-label { font-size: 13px; color: #f2f2f7; }
+    .row-desc  { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 2px; }
+
+    /* Kontroller */
+    select {
       background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.15);
-      padding: 6px 12px;
-      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #f2f2f7;
+      padding: 5px 10px;
+      border-radius: 7px;
+      font-size: 12px;
+      cursor: pointer;
+      outline: none;
+      min-width: 130px;
+    }
+
+    .badge {
+      background: rgba(255,55,95,0.2);
+      color: #FF375F;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
       font-family: monospace;
-      font-size: 13px;
       letter-spacing: 0.05em;
     }
 
-    .cmd-table { width: 100%; border-collapse: collapse; }
-    .cmd-table td {
-      padding: 8px 12px;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      font-size: 13px;
+    /* Komutlar tablosu */
+    .cmd-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
     }
-    .cmd-table td:first-child {
-      color: rgba(255,255,255,0.6);
-      font-family: monospace;
-    }
-    .cmd-table td:last-child { color: #fff; }
 
-    .section-header {
+    .cmd-section { }
+    .cmd-section-title {
       font-size: 12px;
       font-weight: 600;
       color: rgba(255,255,255,0.4);
-      padding: 10px 12px 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
     }
+
+    .cmd-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+
+    .cmd-row:last-child { border-bottom: none; }
+
+    .cmd-key {
+      font-family: monospace;
+      font-size: 12px;
+      color: rgba(255,255,255,0.7);
+      background: rgba(255,255,255,0.08);
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+
+    .cmd-val {
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+    }
+
+    /* Hakkında */
+    .about-card {
+      background: rgba(255,55,95,0.08);
+      border: 1px solid rgba(255,55,95,0.2);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .about-icon { font-size: 40px; }
+
+    .about-info h2 {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .about-info p {
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+      margin-top: 3px;
+    }
+
+    .link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.7);
+      padding: 6px 12px;
+      border-radius: 7px;
+      font-size: 12px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s;
+      margin-top: 10px;
+    }
+
+    .link-btn:hover {
+      background: rgba(255,255,255,0.13);
+      color: #fff;
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Durum rozeti */
+    .status-ok   { color: #30D158; }
+    .status-warn { color: #FF9F0A; }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
   </style>
 </head>
 <body>
 
-  <!-- Sekmeler -->
+  <div class="titlebar">
+    <h1>🎙 Murmur Ayarları</h1>
+    <span class="version">v1.0.0</span>
+  </div>
+
   <div class="tabs">
-    <button class="tab active" onclick="showTab('general')">Genel</button>
-    <button class="tab" onclick="showTab('speech')">Ses Tanıma</button>
-    <button class="tab" onclick="showTab('commands')">Komutlar</button>
+    <button class="tab active" data-tab="general">⚙️ Genel</button>
+    <button class="tab" data-tab="speech">🗣 Ses Tanıma</button>
+    <button class="tab" data-tab="commands">⌨️ Komutlar</button>
+    <button class="tab" data-tab="about">ℹ️ Hakkında</button>
   </div>
 
-  <!-- Genel -->
-  <div class="tab-content active" id="tab-general">
-    <p class="section-title">Kısayol</p>
-    <div class="setting-row">
-      <div>
-        <div class="setting-label">Dikte kısayolu</div>
-        <div class="setting-desc">Herhangi bir uygulamada çalışır</div>
+  <!-- GENEL -->
+  <div class="content tab-content active" id="tab-general">
+
+    <p class="group-title">Kısayol</p>
+    <div class="group">
+      <div class="row">
+        <div class="row-info">
+          <div class="row-label">Dikte kısayolu</div>
+          <div class="row-desc">Herhangi bir uygulamada bas → konuş → yazar</div>
+        </div>
+        <span class="badge">⌥ Space</span>
       </div>
-      <span class="hotkey-display">⌥ Space</span>
-    </div>
-
-    <p class="section-title" style="margin-top:20px">Hakkında</p>
-    <div class="setting-row">
-      <div class="setting-label">Murmur</div>
-      <span style="color:rgba(255,255,255,0.4); font-size:13px">v1.0.0</span>
-    </div>
-  </div>
-
-  <!-- Ses Tanıma -->
-  <div class="tab-content" id="tab-speech">
-    <p class="section-title">Dil</p>
-    <div class="setting-row">
-      <div>
-        <div class="setting-label">Dikte dili</div>
-        <div class="setting-desc">Otomatik: sistem diline göre seçilir</div>
+      <div class="row">
+        <div class="row-info">
+          <div class="row-label">Nasıl çalışır?</div>
+          <div class="row-desc">İmleci bir yere tıkla → ⌥Space → konuş → metin oraya yazılır</div>
+        </div>
       </div>
-      <select id="langSelect" onchange="saveLang()">
-        <option value="auto">🔄 Otomatik</option>
-        <option value="tr">🇹🇷 Türkçe</option>
-        <option value="en">🇬🇧 İngilizce</option>
-      </select>
     </div>
 
-    <div style="margin-top:16px; padding:12px; background:rgba(255,149,0,0.1); border-radius:10px; border:1px solid rgba(255,149,0,0.2)">
-      <p style="font-size:12px; color:rgba(255,200,100,0.9); line-height:1.5">
-        💡 <strong>İzin gerekiyor:</strong> İlk kullanımda macOS mikrofon ve konuşma tanıma izni isteyecek. Her ikisini de "İzin Ver" ile onayla.
-      </p>
+    <p class="group-title">Durum</p>
+    <div class="group">
+      <div class="row">
+        <div class="row-info"><div class="row-label">Whisper modeli</div></div>
+        <span class="status-ok" id="modelStatus">✓ Yüklü (base)</span>
+      </div>
+      <div class="row">
+        <div class="row-info"><div class="row-label">Mikrofon</div></div>
+        <span class="status-ok" id="micStatus">✓ Erişim var</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- SES TANIMA -->
+  <div class="content tab-content" id="tab-speech">
+
+    <p class="group-title">Dil</p>
+    <div class="group">
+      <div class="row">
+        <div class="row-info">
+          <div class="row-label">Dikte dili</div>
+          <div class="row-desc">Konuşacağın dili seç</div>
+        </div>
+        <select id="langSelect">
+          <option value="auto">🔄 Otomatik</option>
+          <option value="tr">🇹🇷 Türkçe</option>
+          <option value="en">🇬🇧 İngilizce</option>
+        </select>
+      </div>
+    </div>
+
+    <p class="group-title">Model Kalitesi</p>
+    <div class="group">
+      <div class="row">
+        <div class="row-info">
+          <div class="row-label">Whisper modeli</div>
+          <div class="row-desc">Büyük model = daha iyi tanıma, daha yavaş</div>
+        </div>
+        <select id="modelSelect">
+          <option value="tiny">tiny — en hızlı, temel</option>
+          <option value="base" selected>base — iyi denge ✓</option>
+          <option value="small">small — çok iyi (461MB)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="row" style="background: rgba(255,149,0,0.06);">
+        <div class="row-info">
+          <div class="row-label" style="color: #FF9F0A;">💡 İpucu</div>
+          <div class="row-desc">Konuştuktan sonra 1.5sn bekle — sistem sesin bittiğini anlayınca işlemeye başlar.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- KOMUTLAR -->
+  <div class="content tab-content" id="tab-commands">
+    <div class="cmd-grid">
+      <div class="cmd-section">
+        <div class="cmd-section-title">🇹🇷 Türkçe Komutlar</div>
+        <div class="cmd-row"><span class="cmd-key">"nokta"</span><span class="cmd-val">.</span></div>
+        <div class="cmd-row"><span class="cmd-key">"virgül"</span><span class="cmd-val">,</span></div>
+        <div class="cmd-row"><span class="cmd-key">"soru işareti"</span><span class="cmd-val">?</span></div>
+        <div class="cmd-row"><span class="cmd-key">"ünlem"</span><span class="cmd-val">!</span></div>
+        <div class="cmd-row"><span class="cmd-key">"iki nokta"</span><span class="cmd-val">:</span></div>
+        <div class="cmd-row"><span class="cmd-key">"yeni satır"</span><span class="cmd-val">↵</span></div>
+        <div class="cmd-row"><span class="cmd-key">"yeni paragraf"</span><span class="cmd-val">↵↵</span></div>
+        <div class="cmd-row"><span class="cmd-key">"başlık yaz X"</span><span class="cmd-val"># X</span></div>
+        <div class="cmd-row"><span class="cmd-key">"büyük harf X"</span><span class="cmd-val">X BÜYÜK</span></div>
+      </div>
+      <div class="cmd-section">
+        <div class="cmd-section-title">🇬🇧 English Commands</div>
+        <div class="cmd-row"><span class="cmd-key">"period"</span><span class="cmd-val">.</span></div>
+        <div class="cmd-row"><span class="cmd-key">"comma"</span><span class="cmd-val">,</span></div>
+        <div class="cmd-row"><span class="cmd-key">"question mark"</span><span class="cmd-val">?</span></div>
+        <div class="cmd-row"><span class="cmd-key">"exclamation"</span><span class="cmd-val">!</span></div>
+        <div class="cmd-row"><span class="cmd-key">"colon"</span><span class="cmd-val">:</span></div>
+        <div class="cmd-row"><span class="cmd-key">"new line"</span><span class="cmd-val">↵</span></div>
+        <div class="cmd-row"><span class="cmd-key">"new paragraph"</span><span class="cmd-val">↵↵</span></div>
+        <div class="cmd-row"><span class="cmd-key">"heading X"</span><span class="cmd-val"># X</span></div>
+        <div class="cmd-row"><span class="cmd-key">"dash"</span><span class="cmd-val">-</span></div>
+      </div>
     </div>
   </div>
 
-  <!-- Komutlar -->
-  <div class="tab-content" id="tab-commands">
-    <div style="overflow-y:auto; max-height:260px">
-      <p class="section-header">🇹🇷 Türkçe</p>
-      <table class="cmd-table">
-        <tr><td>"nokta"</td><td>.</td></tr>
-        <tr><td>"virgül"</td><td>,</td></tr>
-        <tr><td>"soru işareti"</td><td>?</td></tr>
-        <tr><td>"ünlem"</td><td>!</td></tr>
-        <tr><td>"iki nokta"</td><td>:</td></tr>
-        <tr><td>"yeni satır"</td><td>↵</td></tr>
-        <tr><td>"yeni paragraf"</td><td>↵↵</td></tr>
-        <tr><td>"başlık yaz X"</td><td># X</td></tr>
-        <tr><td>"büyük harf X"</td><td>X (büyük)</td></tr>
-      </table>
+  <!-- HAKKINDA -->
+  <div class="content tab-content" id="tab-about">
+    <div class="about-card">
+      <span class="about-icon">🎙</span>
+      <div class="about-info">
+        <h2>Murmur</h2>
+        <p>macOS için sistem geneli sesli dikte</p>
+        <p>Türkçe ve İngilizce · Tamamen yerel · İnternet gerekmez</p>
+        <a class="link-btn" href="https://github.com/S1E0sk/murmur" id="ghLink">🐙 GitHub'da görüntüle</a>
+      </div>
+    </div>
 
-      <p class="section-header" style="margin-top:12px">🇬🇧 English</p>
-      <table class="cmd-table">
-        <tr><td>"period"</td><td>.</td></tr>
-        <tr><td>"comma"</td><td>,</td></tr>
-        <tr><td>"question mark"</td><td>?</td></tr>
-        <tr><td>"exclamation"</td><td>!</td></tr>
-        <tr><td>"new line"</td><td>↵</td></tr>
-        <tr><td>"new paragraph"</td><td>↵↵</td></tr>
-        <tr><td>"heading X"</td><td># X</td></tr>
-      </table>
+    <p class="group-title">Teknoloji</p>
+    <div class="group">
+      <div class="row">
+        <div class="row-info"><div class="row-label">Ses tanıma</div></div>
+        <span style="color: rgba(255,255,255,0.4); font-size: 12px;">OpenAI Whisper (yerel)</span>
+      </div>
+      <div class="row">
+        <div class="row-info"><div class="row-label">Ses kaydı</div></div>
+        <span style="color: rgba(255,255,255,0.4); font-size: 12px;">SoX</span>
+      </div>
+      <div class="row">
+        <div class="row-info"><div class="row-label">Çerçeve</div></div>
+        <span style="color: rgba(255,255,255,0.4); font-size: 12px;">Electron + Node.js</span>
+      </div>
+      <div class="row">
+        <div class="row-info"><div class="row-label">Lisans</div></div>
+        <span style="color: rgba(255,255,255,0.4); font-size: 12px;">MIT</span>
+      </div>
     </div>
   </div>
 
   <script>
-    const { ipcRenderer } = require('electron')
+    const { ipcRenderer, shell } = require('electron')
+
+    // Sekme geçişi
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'))
+        tab.classList.add('active')
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active')
+      })
+    })
 
     // Ayarları yükle
     ipcRenderer.invoke('get-settings').then(s => {
-      document.getElementById('langSelect').value = s.language || 'auto'
+      document.getElementById('langSelect').value  = s.language || 'auto'
+      document.getElementById('modelSelect').value = s.model    || 'base'
     })
 
-    function showTab(name) {
-      document.querySelectorAll('.tab').forEach((t, i) => {
-        t.classList.toggle('active', ['general','speech','commands'][i] === name)
-      })
-      document.querySelectorAll('.tab-content').forEach(c => {
-        c.classList.toggle('active', c.id === `tab-${name}`)
-      })
-    }
+    // Kaydet
+    document.getElementById('langSelect').addEventListener('change', e => {
+      ipcRenderer.send('save-setting', 'language', e.target.value)
+    })
 
-    function saveLang() {
-      const val = document.getElementById('langSelect').value
-      ipcRenderer.send('save-setting', 'language', val)
-    }
+    document.getElementById('modelSelect').addEventListener('change', e => {
+      ipcRenderer.send('save-setting', 'model', e.target.value)
+    })
+
+    // GitHub linki
+    document.getElementById('ghLink').addEventListener('click', e => {
+      e.preventDefault()
+      shell.openExternal('https://github.com/S1E0sk/murmur')
+    })
   </script>
 </body>
 </html>

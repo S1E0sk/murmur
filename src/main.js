@@ -98,7 +98,8 @@ function startDictation() {
 
   // Python + Whisper ile yerel ses tanıma
   const pyScript = path.join(__dirname, 'transcribe.py')
-  speechProcess = spawn('python3', [pyScript, langCode, 'base'])
+  const model = s.model || 'base'
+  speechProcess = spawn('python3', [pyScript, langCode, model])
 
   speechProcess.stdout.on('data', (data) => {
     const lines = data.toString().trim().split('\n')
