@@ -27,13 +27,12 @@ app.on('window-all-closed', (e) => e.preventDefault())
 // ─── Tray ────────────────────────────────────────────────────────────────────
 
 function createTray() {
-  const icon = nativeImage.createFromDataURL(getMicIconBase64(false))
+  const iconPath = path.join(__dirname, 'assets', 'tray.png')
+  const icon = nativeImage.createFromPath(iconPath)
   icon.setTemplateImage(true)
   tray = new Tray(icon)
   tray.setToolTip('Murmur — Sesli Dikte')
   buildTrayMenu()
-
-  // Sol tık da menüyü açsın
   tray.on('click', () => tray.popUpContextMenu())
 }
 
@@ -94,7 +93,11 @@ function startDictation() {
 
   createFloatingWindow()
   buildTrayMenu(true)
-  tray.setImage(nativeImage.createFromDataURL(getMicIconBase64(true)))
+
+  // Dinleme ikonu — kırmızı
+  const activeIcon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'))
+  tray.setImage(activeIcon)
+  tray.setTitle('●')  // menü barında kırmızı nokta
 
   // Python + Whisper ile yerel ses tanıma
   const pyScript = path.join(__dirname, 'transcribe.py')
@@ -105,23 +108,31 @@ function startDictation() {
     const lines = data.toString().trim().split('\n')
     for (const line of lines) {
       if (line.startsWith('INTERIM:')) {
-        const text = line.slice(8)
-        floatingWin?.webContents.send('interim-text', text)
+        floatingWin?.webContents.send('interim-text', line.slice(8))
+
+      } else if (line.startsWith('CHUNK:')) {
+        // Gerçek zamanlı: parça gelince hemen yaz, oturum açık kalır
+        const text = line.slice(6).trim()
+        if (text) {
+          const processed = processCommandsMain(text, langCode)
+          floatingWin?.webContents.send('interim-text', '✓ ' + text)
+          setTimeout(() => typeText(processed + ' '), 300)
+          saveHistory(processed)
+        }
+
       } else if (line.startsWith('FINAL:')) {
+        // Tek seferlik mod (eski uyumluluk)
         const text = line.slice(6).trim()
         if (text) {
           const processed = processCommandsMain(text, langCode)
           stopDictation()
-          setTimeout(() => {
-            typeText(processed)
-            saveHistory(processed)
-          }, 200)
+          setTimeout(() => { typeText(processed); saveHistory(processed) }, 600)
         } else {
           stopDictation()
         }
+
       } else if (line.startsWith('ERROR:')) {
-        const errMsg = line.slice(6)
-        floatingWin?.webContents.send('show-error', errMsg)
+        floatingWin?.webContents.send('show-error', line.slice(6))
         setTimeout(() => stopDictation(), 2500)
       }
     }
@@ -143,7 +154,6 @@ function startDictation() {
 }
 
 function stopDictation() {
-  // Swift process'i durdur
   if (speechProcess) {
     speechProcess.kill('SIGTERM')
     speechProcess = null
@@ -155,9 +165,10 @@ function stopDictation() {
     }, 100)
   }
   buildTrayMenu(false)
-  const icon = nativeImage.createFromDataURL(getMicIconBase64(false))
+  const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'))
   icon.setTemplateImage(true)
   tray.setImage(icon)
+  tray.setTitle('')
 }
 
 // Komutları main process'te de işle (Swift output için)
@@ -191,12 +202,11 @@ function createFloatingWindow() {
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
-    focusable: true,
+    focusable: false,   // odak çalma! orijinal uygulama odakta kalmalı
     hasShadow: true,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      // Web Speech API için gerekli
       webSecurity: false,
     }
   })
@@ -204,32 +214,29 @@ function createFloatingWindow() {
   floatingWin.loadFile('src/floating.html')
   floatingWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   floatingWin.setAlwaysOnTop(true, 'screen-saver')
-
-  // Kısa gecikme sonra focus ver — speech recognition için gerekli
-  setTimeout(() => {
-    if (floatingWin && !floatingWin.isDestroyed()) floatingWin.focus()
-  }, 200)
+  // NOT: focus() çağrılmıyor — orijinal uygulama odakta kalmalı
 
   floatingWin.on('closed', () => {
     floatingWin = null
     buildTrayMenu(false)
-    const icon = nativeImage.createFromDataURL(getMicIconBase64(false))
+    const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'))
     icon.setTemplateImage(true)
     tray.setImage(icon)
+    tray.setTitle('')
   })
 }
 
 // ─── IPC ─────────────────────────────────────────────────────────────────────
 
-// Swift process kullandığımız için renderer'dan result gelmeyebilir
-// ama yine de tutuyoruz (fallback için)
 ipcMain.on('dictation-result', (_, text) => {
   if (!text?.trim()) return
   stopDictation()
+  // Floating pencere kapanınca orijinal uygulama odak alır.
+  // 600ms bekleyerek o geçişin tamamlanmasını sağlıyoruz.
   setTimeout(() => {
     typeText(text)
     saveHistory(text)
-  }, 200)
+  }, 600)
 })
 
 ipcMain.on('dictation-cancel', () => stopDictation())
@@ -252,16 +259,27 @@ ipcMain.on('clear-history', () => fs.writeFileSync(historyFile, JSON.stringify([
 // ─── Metin Yazma ─────────────────────────────────────────────────────────────
 
 function typeText(text) {
-  const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')
+  // Tırnak ve özel karakterleri escape et
+  const safe = text
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+
   try {
-    execSync(`osascript -e '
-      set the clipboard to "${escaped}"
-      tell application "System Events"
-        keystroke "v" using {command down}
-      end tell
-    '`)
+    // 1. Pano'ya yaz
+    // 2. Ön plandaki uygulamayı aktifleştir (focus Electron'dan geri dönsün)
+    // 3. Cmd+V ile yapıştır
+    execSync(`osascript << 'APPLESCRIPT'
+set the clipboard to "${safe}"
+delay 0.2
+tell application "System Events"
+  keystroke "v" using {command down}
+end tell
+APPLESCRIPT`)
   } catch (e) {
     console.error('Yazma hatası:', e.message)
+    // Fallback: sadece pano'ya koy
+    try { execSync(`printf '%s' "${safe}" | pbcopy`) } catch {}
   }
 }
 
@@ -331,10 +349,5 @@ function saveHistory(text) {
   fs.writeFileSync(historyFile, JSON.stringify(h.slice(0, 200)))
 }
 
-// ─── İkon ────────────────────────────────────────────────────────────────────
-
-function getMicIconBase64(active = false) {
-  const fill = active ? '%23FF3B30' : '%23000000'
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='${fill}'><path d='M12 1a4 4 0 0 1 4 4v7a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm6.5 10.5A6.5 6.5 0 0 1 12 18a6.5 6.5 0 0 1-6.5-6.5H4A8 8 0 0 0 11 19.9V22h2v-2.1A8 8 0 0 0 20 11.5h-1.5z'/></svg>`
-  return `data:image/svg+xml,${svg}`
-}
+// ─── İkon (artık kullanılmıyor, PNG dosyadan yükleniyor) ─────────────────────
+// Eski SVG yöntemi kaldırıldı
