@@ -44,16 +44,18 @@
     .bar {
       width: 3px; min-height: 3px; border-radius: 2px;
       background: linear-gradient(to top, #FF375F, #FF8FAB);
-      transition: height 0.07s ease-out;
+      transition: height 0.06s ease-out;
     }
     .live-text {
-      color: rgba(255,255,255,0.65);
+      color: rgba(255,255,255,0.75);
       font-size: 12.5px;
-      max-width: 110px;
+      max-width: 130px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       flex-shrink: 0;
+      transition: color 0.2s;
     }
-    .live-text.error { color: #FF453A; }
+    .live-text.interim { color: rgba(255,255,255,0.45); font-style: italic; }
+    .live-text.error   { color: #FF453A; }
     .cancel {
       -webkit-app-region: no-drag;
       background: rgba(255,255,255,0.07);
@@ -78,12 +80,11 @@
 
 <script>
 const { ipcRenderer } = require('electron')
-
-// ─── Barları oluştur ─────────────────────────────────────────────────────────
-const waveEl   = document.getElementById('wave')
-const liveText = document.getElementById('liveText')
+const liveText  = document.getElementById('liveText')
 const cancelBtn = document.getElementById('cancelBtn')
+const waveEl    = document.getElementById('wave')
 
+// ─── Ses dalgası barları ──────────────────────────────────────────────────────
 const BAR_COUNT = 14
 const bars = []
 for (let i = 0; i < BAR_COUNT; i++) {
@@ -94,26 +95,122 @@ for (let i = 0; i < BAR_COUNT; i++) {
   bars.push(b)
 }
 
-// ─── Web Audio — mikrofon seviyesi görselleştirme ─────────────────────────────
 let audioCtx, analyser, dataArray, animFrame, micStream
+let socket = null
+let mediaRecorder = null
+let isActive = true
 
-navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-  .then(stream => {
-    micStream = stream
-    audioCtx  = new AudioContext()
-    analyser  = audioCtx.createAnalyser()
-    analyser.fftSize = 64
-    audioCtx.createMediaStreamSource(stream).connect(analyser)
-    dataArray = new Uint8Array(analyser.frequencyBinCount)
-    drawBars()
+// ─── Başlat ───────────────────────────────────────────────────────────────────
+ipcRenderer.invoke('get-settings').then(settings => {
+  const lang      = settings.language === 'en' ? 'en-US' : 'tr'
+  const deepgramKey = settings.deepgramApiKey || ''
+
+  if (!deepgramKey) {
+    showError('Deepgram API key yok')
+    setTimeout(() => ipcRenderer.send('dictation-cancel'), 2000)
+    return
+  }
+
+  // Mikrofon aç
+  navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+    .then(stream => {
+      micStream = stream
+      setupVisualizer(stream)
+      startDeepgramStreaming(stream, deepgramKey, lang)
+    })
+    .catch(() => {
+      showError('Mikrofon izni gerekli')
+      setTimeout(() => ipcRenderer.send('dictation-cancel'), 2000)
+    })
+})
+
+// ─── Deepgram WebSocket Streaming ─────────────────────────────────────────────
+function startDeepgramStreaming(stream, apiKey, lang) {
+  const params = new URLSearchParams({
+    language:          lang,
+    model:             'nova-2',     // en iyi model
+    punctuate:         'true',
+    interim_results:   'true',       // konuşurken göster
+    smart_format:      'true',       // otomatik noktalama
+    utterance_end_ms:  '1500',       // 1.5sn sessizlik = cümle bitti
+    vad_events:        'true',       // ses aktivasyon olayları
+    endpointing:       '400',        // 400ms sessizlikte gönder
   })
-  .catch(() => {
-    // İzin yoksa simüle et
-    simulateWave()
-  })
+
+  socket = new WebSocket(`wss://api.deepgram.com/v1/listen?${params}`, [
+    'token', apiKey
+  ])
+
+  socket.onopen = () => {
+    // MediaRecorder ile ses parçalarını WebSocket'e gönder
+    mediaRecorder = new MediaRecorder(stream, {
+      mimeType: 'audio/webm;codecs=opus',
+      audioBitsPerSecond: 16000
+    })
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+        socket.send(e.data)
+      }
+    }
+
+    mediaRecorder.start(100)   // her 100ms'de bir parça gönder → gerçek zamanlı
+  }
+
+  socket.onmessage = (e) => {
+    const data = JSON.parse(e.data)
+
+    if (data.type === 'Results') {
+      const alt      = data.channel?.alternatives?.[0]
+      const text     = alt?.transcript?.trim()
+      const isFinal  = data.is_final
+
+      if (!text) return
+
+      if (isFinal) {
+        // Kesin sonuç → anında yaz
+        liveText.classList.remove('interim')
+        liveText.textContent = text
+        ipcRenderer.send('stream-text', text + ' ')
+      } else {
+        // Ara sonuç → panelde göster ama yazma
+        liveText.classList.add('interim')
+        liveText.textContent = text
+      }
+    }
+
+    if (data.type === 'UtteranceEnd') {
+      // Kullanıcı durdu sinyali
+      liveText.classList.remove('interim')
+      liveText.textContent = 'Dinliyorum...'
+    }
+  }
+
+  socket.onerror = (e) => {
+    showError('Bağlantı hatası')
+    setTimeout(() => ipcRenderer.send('dictation-cancel'), 2000)
+  }
+
+  socket.onclose = (e) => {
+    if (isActive && e.code !== 1000) {
+      showError(`Hata: ${e.code}`)
+    }
+  }
+}
+
+// ─── Ses görselleştirme ───────────────────────────────────────────────────────
+function setupVisualizer(stream) {
+  audioCtx  = new AudioContext()
+  analyser  = audioCtx.createAnalyser()
+  analyser.fftSize = 64
+  audioCtx.createMediaStreamSource(stream).connect(analyser)
+  dataArray = new Uint8Array(analyser.frequencyBinCount)
+  drawBars()
+}
 
 function drawBars() {
   animFrame = requestAnimationFrame(drawBars)
+  if (!analyser) return
   analyser.getByteFrequencyData(dataArray)
   const step = Math.floor(dataArray.length / BAR_COUNT)
   for (let i = 0; i < BAR_COUNT; i++) {
@@ -122,44 +219,24 @@ function drawBars() {
   }
 }
 
-// Mikrofon izni yoksa güzel simülasyon
-function simulateWave() {
-  let t = 0
-  const tick = () => {
-    t += 0.08
-    for (let i = 0; i < BAR_COUNT; i++) {
-      const h = 4 + Math.abs(Math.sin(t + i * 0.4)) * 28
-      bars[i].style.height = h + 'px'
-    }
-    animFrame = requestAnimationFrame(tick)
-  }
-  animFrame = requestAnimationFrame(tick)
-}
-
+// ─── Temizlik ─────────────────────────────────────────────────────────────────
 function cleanup() {
+  isActive = false
   if (animFrame) cancelAnimationFrame(animFrame)
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop()
+  if (socket && socket.readyState === WebSocket.OPEN) socket.close(1000)
   if (audioCtx) audioCtx.close().catch(() => {})
   if (micStream) micStream.getTracks().forEach(t => t.stop())
 }
 
-// ─── Swift'ten gelen mesajlar ─────────────────────────────────────────────────
-
-ipcRenderer.on('interim-text', (_, text) => {
-  liveText.classList.remove('error')
-  liveText.textContent = text || 'Dinliyorum...'
-})
-
-ipcRenderer.on('show-error', (_, msg) => {
+function showError(msg) {
   liveText.classList.add('error')
+  liveText.classList.remove('interim')
   liveText.textContent = msg
   bars.forEach(b => b.style.height = '4px')
-})
+}
 
-ipcRenderer.on('stop-recognition', () => {
-  cleanup()
-})
-
-// ─── İptal ───────────────────────────────────────────────────────────────────
+// ─── Kontroller ───────────────────────────────────────────────────────────────
 cancelBtn.addEventListener('click', () => {
   cleanup()
   ipcRenderer.send('dictation-cancel')
@@ -168,6 +245,8 @@ cancelBtn.addEventListener('click', () => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') cancelBtn.click()
 })
+
+ipcRenderer.on('stop-recognition', () => cleanup())
 </script>
 </body>
 </html>

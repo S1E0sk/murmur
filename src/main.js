@@ -89,84 +89,21 @@ function toggleDictation() {
 }
 
 function startDictation() {
-  const s = loadSettings()
-  const langCode = { auto: 'tr', tr: 'tr', en: 'en' }[s.language] || 'tr'
-
   createFloatingWindow()
   buildTrayMenu(true)
-
-  // Dinleme durumu — kırmızı nokta göster
-  tray.setTitle('🔴')
-
-  // Python + Groq/Whisper ses tanıma
-  const pyScript = path.join(__dirname, 'transcribe.py')
-  const apiKey   = s.groqApiKey || ''
-  speechProcess  = spawn('python3', [pyScript, langCode, apiKey])
-
-  speechProcess.stdout.on('data', (data) => {
-    const lines = data.toString().trim().split('\n')
-    for (const line of lines) {
-      if (line.startsWith('INTERIM:')) {
-        floatingWin?.webContents.send('interim-text', line.slice(8))
-
-      } else if (line.startsWith('CHUNK:')) {
-        // Gerçek zamanlı: parça gelince hemen yaz, oturum açık kalır
-        const text = line.slice(6).trim()
-        if (text) {
-          const processed = processCommandsMain(text, langCode)
-          floatingWin?.webContents.send('interim-text', '✓ ' + text)
-          setTimeout(() => typeText(processed + ' '), 300)
-          saveHistory(processed)
-        }
-
-      } else if (line.startsWith('FINAL:')) {
-        // Tek seferlik mod (eski uyumluluk)
-        const text = line.slice(6).trim()
-        if (text) {
-          const processed = processCommandsMain(text, langCode)
-          stopDictation()
-          setTimeout(() => { typeText(processed); saveHistory(processed) }, 600)
-        } else {
-          stopDictation()
-        }
-
-      } else if (line.startsWith('ERROR:')) {
-        floatingWin?.webContents.send('show-error', line.slice(6))
-        setTimeout(() => stopDictation(), 2500)
-      }
-    }
-  })
-
-  speechProcess.stderr.on('data', (d) => {
-    // Whisper model yüklenirken stderr'e yazar — ignore
-    const msg = d.toString()
-    if (msg.includes('Downloading') || msg.includes('Loading')) {
-      floatingWin?.webContents.send('interim-text', 'Model yükleniyor...')
-    }
-  })
-
-  speechProcess.on('close', () => { speechProcess = null })
-  speechProcess.on('error', (e) => {
-    floatingWin?.webContents.send('show-error', 'Python bulunamadı')
-    setTimeout(() => stopDictation(), 2000)
-  })
+  tray.setTitle('🎙●')
+  // Ses tanıma artık floating.html içinde Deepgram WebSocket üzerinden yapılıyor
 }
 
 function stopDictation() {
-  if (speechProcess) {
-    speechProcess.kill('SIGTERM')
-    speechProcess = null
-  }
+  if (speechProcess) { speechProcess.kill('SIGTERM'); speechProcess = null }
   if (floatingWin && !floatingWin.isDestroyed()) {
     floatingWin.webContents.send('stop-recognition')
     setTimeout(() => {
       if (floatingWin && !floatingWin.isDestroyed()) floatingWin.close()
-    }, 100)
+    }, 150)
   }
   buildTrayMenu(false)
-  const BLANK = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-  const icon = nativeImage.createFromDataURL(BLANK)
-  tray.setImage(icon)
   tray.setTitle('🎙')
 }
 
@@ -221,7 +158,7 @@ function createFloatingWindow() {
     const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'))
     icon.setTemplateImage(true)
     tray.setImage(icon)
-    tray.setTitle('')
+    tray.setTitle('🎙')
   })
 }
 
@@ -239,6 +176,16 @@ ipcMain.on('dictation-result', (_, text) => {
 })
 
 ipcMain.on('dictation-cancel', () => stopDictation())
+
+// Deepgram'dan gelen kelimeler — anında yaz, oturum açık kalır
+ipcMain.on('stream-text', (_, text) => {
+  if (!text?.trim()) return
+  const s = loadSettings()
+  const lang = { auto: 'tr', tr: 'tr', en: 'en' }[s.language] || 'tr'
+  const processed = processCommandsMain(text.trim(), lang)
+  typeText(processed + ' ')
+  saveHistory(processed)
+})
 
 ipcMain.handle('get-settings', () => loadSettings())
 ipcMain.handle('get-history',  () => loadHistory())
